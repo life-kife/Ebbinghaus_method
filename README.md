@@ -12,6 +12,12 @@ capacitor.config.json             — имя и идентификатор пр�
 .github/workflows/build-apk.yml   — автоматическая сборка APK на GitHub
 ```
 
+## Скачать готовый APK
+
+https://github.com/life-kife/Ebbinghaus_method/releases/latest/download/kartochki.apk
+
+Ссылку можно открыть прямо на телефоне. Файл обновляется автоматически после каждого изменения в репозитории.
+
 ## Способ 1. Собрать APK на GitHub (без установки программ)
 
 1. Зарегистрируйтесь на github.com, если ещё нет аккаунта.
