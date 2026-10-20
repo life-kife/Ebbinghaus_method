@@ -28,7 +28,12 @@ jobs:
       - name: Создание Android-проекта
         run: |
           if [ ! -d android ]; then npx cap add android; fi
+          npx capacitor-assets generate --android --iconBackgroundColor '#2F47C4' --iconBackgroundColorDark '#2F47C4' --splashBackgroundColor '#EEF0F3' --splashBackgroundColorDark '#12151C'
+          sed -i 's/versionName "1.0"/versionName "1.1"/; s/versionCode 1$/versionCode 2/' android/app/build.gradle
           npx cap sync android
+
+      - name: Постоянный ключ подписи (чтобы обновления ставились поверх)
+        run: mkdir -p ~/.android && cp keystore/debug.keystore ~/.android/debug.keystore
 
       - name: Сборка APK
         working-directory: android
