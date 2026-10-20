@@ -1,0 +1,417 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Карточки</title>
+<style>
+:root{
+  --bg:#eef0f3; --surface:#ffffff; --ink:#1b2130; --muted:#626b7b; --line:#d8dce4;
+  --accent:#2f47c4; --accent-soft:#e4e9fb; --again:#c2412d; --hard:#b77a12; --good:#2f8a4e;
+  --f-display:"Noto Serif", Georgia, serif; --f-body:system-ui, Roboto, "Segoe UI", sans-serif; --f-mono:"Roboto Mono", ui-monospace, monospace;
+  color-scheme:light;
+}
+@media (prefers-color-scheme: dark){:root{
+  --bg:#12151c; --surface:#1b1f29; --ink:#e7e9ee; --muted:#9aa2b2; --line:#2d3342;
+  --accent:#8ea0ff; --accent-soft:#252c4a; --again:#ef7a66; --hard:#e0aa4a; --good:#5fc282; color-scheme:dark}}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html,body{margin:0}
+body{background:var(--bg);color:var(--ink);font:16px/1.55 var(--f-body);padding:env(safe-area-inset-top,0px) max(16px,env(safe-area-inset-right,0px)) 0 max(16px,env(safe-area-inset-left,0px))}
+.wrap{max-width:560px;margin:0 auto;padding-block:20px 110px;display:grid;gap:20px}
+h1{font:700 1.6rem/1.2 var(--f-display);margin:0}
+h2{font:600 1.1rem/1.3 var(--f-body);margin:0}
+p{margin:0}
+.muted{color:var(--muted)} .small{font-size:.88rem}
+button{font:500 1rem var(--f-body);border:1px solid var(--line);background:var(--surface);color:var(--ink);border-radius:12px;padding:12px 16px;cursor:pointer}
+button:active{transform:scale(.98)}
+.primary{background:var(--accent);border-color:var(--accent);color:var(--surface);font-weight:600}
+.big{width:100%;padding:16px;font-size:1.1rem}
+.link{border:0;background:none;color:var(--accent);padding:6px 0}
+input,textarea{font:inherit;color:var(--ink);background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:10px 12px;width:100%}
+textarea{min-height:120px;font:.85rem/1.5 var(--f-mono);resize:vertical}
+label{display:grid;gap:6px;font-size:.92rem;color:var(--muted)}
+.hero{background:var(--surface);border:1px solid var(--line);border-radius:18px;padding:24px 20px;display:grid;gap:16px;text-align:center}
+.hero .count{font:700 3.4rem/1 var(--f-display);color:var(--accent)}
+.decks{display:grid;gap:8px}
+.deck{display:flex;align-items:center;gap:12px;padding:12px 14px;text-align:left;width:100%}
+.deck .name{flex:1;min-width:0;font-weight:500}
+.deck .n{font:600 .9rem var(--f-mono);color:var(--muted)}
+.deck .n.has{color:var(--accent)}
+.deck:disabled{opacity:.7}
+.topbar{display:flex;align-items:center;gap:12px}
+.bar{flex:1;height:6px;background:var(--line);border-radius:99px;overflow:hidden}
+.bar i{display:block;height:100%;background:var(--accent);transition:width .3s}
+.card{background:var(--surface);border:1px solid var(--line);border-radius:18px;padding:28px 22px;min-height:260px;display:grid;gap:18px;align-content:center;text-align:center;box-shadow:0 12px 30px -20px rgba(20,30,60,.4)}
+.card .deckname{font-size:.8rem;color:var(--muted);letter-spacing:.06em;text-transform:uppercase}
+.card .q{font:500 1.35rem/1.4 var(--f-display)}
+.card .a{border-top:1px dashed var(--line);padding-top:18px;font-size:1.1rem;white-space:pre-wrap}
+.grades{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
+.grade{display:grid;gap:2px;padding:12px 4px;border-width:1px 1px 4px;font-weight:600;font-size:.95rem}
+.grade small{font-weight:400;font-size:.75rem;color:var(--muted)}
+.g-again{border-bottom-color:var(--again)}.g-hard{border-bottom-color:var(--hard)}.g-good{border-bottom-color:var(--good)}
+.done{text-align:center;display:grid;gap:12px;padding:40px 16px}
+.done .mark{font:700 2.6rem var(--f-display);color:var(--good)}
+.list{display:grid;gap:8px}
+.item{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:12px 14px;display:flex;gap:12px;align-items:flex-start}
+.item .txt{flex:1;min-width:0}
+.item .q{font-weight:500}
+.item .meta{font-size:.82rem;color:var(--muted)}
+.item .del{border:0;background:none;color:var(--muted);padding:4px 8px}
+.form{background:var(--surface);border:1px solid var(--line);border-radius:16px;padding:16px;display:grid;gap:12px}
+details{background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:4px 16px}
+details[open]{padding-bottom:16px}
+summary{cursor:pointer;padding:12px 0;font-weight:600;list-style:none;display:flex;justify-content:space-between}
+summary::-webkit-details-marker{display:none}
+summary::after{content:"＋";color:var(--muted)}
+details[open] summary::after{content:"－"}
+details > div{display:grid;gap:12px}
+.row{display:flex;flex-wrap:wrap;gap:10px;align-items:center}
+.row > label{flex:1;min-width:120px}
+.switch{display:flex;align-items:center;justify-content:space-between;gap:12px;color:var(--ink);font-size:1rem}
+.switch input{width:auto;transform:scale(1.4)}
+.status{font-size:.88rem;padding:10px 12px;border-radius:10px;background:var(--accent-soft)}
+table{border-collapse:collapse;width:100%;font-size:.82rem}
+th,td{text-align:left;padding:6px 8px;border-bottom:1px solid var(--line)}
+td.num{font-family:var(--f-mono);white-space:nowrap}
+.scroll{overflow-x:auto}
+nav{position:fixed;left:0;right:0;bottom:0;background:var(--surface);border-top:1px solid var(--line);display:flex;justify-content:center;padding:6px max(16px,env(safe-area-inset-right,0px)) calc(6px + env(safe-area-inset-bottom,0px)) max(16px,env(safe-area-inset-left,0px))}
+nav .in{display:flex;gap:4px;width:100%;max-width:560px}
+nav button{flex:1;border:0;background:none;color:var(--muted);padding:8px 4px;display:grid;gap:2px;justify-items:center;font-size:.8rem}
+nav button svg{width:24px;height:24px;stroke:currentColor;fill:none;stroke-width:1.8}
+nav button[aria-current="true"]{color:var(--accent)}
+.badge{font:600 .7rem var(--f-mono);background:var(--accent);color:var(--surface);border-radius:99px;padding:0 6px}
+.toast{position:fixed;left:50%;bottom:calc(84px + env(safe-area-inset-bottom,0px));transform:translateX(-50%);background:var(--ink);color:var(--bg);padding:10px 16px;border-radius:10px;font-size:.9rem;opacity:0;transition:opacity .2s;pointer-events:none;max-width:90vw;text-align:center}
+.toast.on{opacity:1}
+</style>
+</head>
+<body>
+<div class="wrap" id="app"></div>
+
+<nav aria-label="Разделы"><div class="in">
+  <button data-go="home"><svg viewBox="0 0 24 24"><path d="M4 11l8-7 8 7v9H4z"/></svg><span>Главная <span class="badge" id="badge" hidden></span></span></button>
+  <button data-go="cards"><svg viewBox="0 0 24 24"><rect x="4" y="6" width="14" height="13" rx="2"/><path d="M8 3h12v13"/></svg>Карточки</button>
+  <button data-go="more"><svg viewBox="0 0 24 24"><circle cx="5" cy="12" r="1.5"/><circle cx="12" cy="12" r="1.5"/><circle cx="19" cy="12" r="1.5"/></svg>Ещё</button>
+</div></nav>
+<div class="toast" id="toast" role="status"></div>
+
+<script>
+(() => {
+const KEY = 'ebb-cards-v1';
+const DAY = 86400000;
+const REMIND_DAYS = 30;          // на сколько дней вперёд планировать уведомления
+const REMIND_ID_BASE = 1000;     // id уведомлений: 1000..1029
+
+// ---------- Утилиты дат ----------
+const realToday = () => { const d = new Date(); return Math.floor(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()) / DAY); };
+const fmt = n => new Date(n * DAY).toLocaleDateString('ru-RU', { day: 'numeric', month: 'long', timeZone: 'UTC' });
+const $ = id => document.getElementById(id);
+const uid = () => Math.random().toString(36).slice(2, 10);
+const esc = s => String(s).replace(/[&<>"]/g, ch => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[ch]));
+const plural = (n, a, b, c) => { const m = n % 10, h = n % 100; return m === 1 && h !== 11 ? a : m >= 2 && m <= 4 && (h < 12 || h > 14) ? b : c; };
+const cardsWord = n => n + ' ' + plural(n, 'карточка', 'карточки', 'карточек');
+const inDays = n => n <= 0 ? 'сегодня' : n === 1 ? 'завтра' : n < 30 ? `через ${n} ${plural(n, 'день', 'дня', 'дней')}` : n < 365 ? `через ${Math.round(n / 30)} ${plural(Math.round(n / 30), 'месяц', 'месяца', 'месяцев')}` : 'через год';
+
+// ---------- Состояние ----------
+let state;
+const today = () => realToday() + state.offset;
+
+function sample() {
+  const t = realToday();
+  const mk = (q, a, deck, dueIn, interval, ease, reps) => ({ id: uid(), q, a, deck, due: t + dueIn, interval, ease, reps });
+  return [
+    mk('Какой регистр 8086 — счётчик для команды LOOP?', 'CX', 'ВСиПУ', 0, 6, 2.5, 2),
+    mk('Физический адрес при сегменте 1000h и смещении 0020h?', '10020h (сегмент × 16 + смещение)', 'ВСиПУ', 0, 1, 2.36, 1),
+    mk('Какая функция INT 21h выводит строку на экран?', 'AH = 09h, строка заканчивается символом «$»', 'ВСиПУ', 0, 0, 2.5, 0),
+    mk('Что делает команда XLAT?', 'AL ← [BX + AL], подстановка из таблицы', 'ВСиПУ', 3, 15, 2.6, 3),
+    mk('Чем exec() отличается от fork()?', 'fork создаёт копию процесса, exec заменяет текущий процесс новой программой', 'ОС UNIX', 0, 0, 2.5, 0),
+    mk('Что означают права 750?', 'Владелец rwx, группа r-x, остальные ---', 'ОС UNIX', 1, 6, 2.5, 2),
+    mk('Как посмотреть дерево процессов?', 'pstree (или ps -ef --forest)', 'ОС UNIX', 5, 14, 2.4, 3),
+    mk('Что показывает диаграмма прецедентов (use case)?', 'Кто пользуется системой (актёры) и какие задачи в ней решает', 'Проектирование ИС', 0, 0, 2.5, 0),
+    mk('Чем IDEF0 отличается от DFD?', 'IDEF0 описывает функции и управление, DFD — потоки данных между процессами и хранилищами', 'Проектирование ИС', 2, 6, 2.5, 2),
+  ];
+}
+function load() {
+  try { const r = localStorage.getItem(KEY); if (r) { state = JSON.parse(r); } } catch (e) {}
+  if (!state) state = { offset: 0, cards: sample() };
+  state.settings = Object.assign({ remind: true, time: '19:00' }, state.settings || {});
+}
+function save() { try { localStorage.setItem(KEY, JSON.stringify(state)); } catch (e) {} }
+
+// ---------- SM-2 ----------
+// q: 1 — не вспомнил, 3 — с трудом, 4 — вспомнил
+function sm2(card, q) {
+  const c = { ...card };
+  if (q < 3) { c.reps = 0; c.interval = 0; }
+  else {
+    c.interval = c.reps === 0 ? 1 : c.reps === 1 ? 6 : Math.round(c.interval * c.ease);
+    if (q === 3 && c.reps >= 2) c.interval = Math.max(1, Math.round(c.interval * 0.6));
+    c.reps++;
+  }
+  c.ease = Math.max(1.3, +(c.ease + 0.1 - (5 - q) * (0.08 + (5 - q) * 0.02)).toFixed(2));
+  c.due = today() + c.interval;
+  return c;
+}
+const GRADES = [
+  { q: 1, name: 'Не вспомнил', cls: 'g-again' },
+  { q: 3, name: 'С трудом', cls: 'g-hard' },
+  { q: 4, name: 'Вспомнил', cls: 'g-good' },
+];
+const decks = () => [...new Set(state.cards.map(c => c.deck))].sort();
+const due = deck => state.cards.filter(c => c.due <= today() && (!deck || c.deck === deck));
+const newCard = (q, a, deck) => ({ id: uid(), q, a, deck, due: today(), interval: 0, ease: 2.5, reps: 0 });
+
+function toast(msg) { const t = $('toast'); t.textContent = msg; t.classList.add('on'); clearTimeout(t._h); t._h = setTimeout(() => t.classList.remove('on'), 2200); }
+
+// ---------- Уведомления (Capacitor Local Notifications) ----------
+const Cap = window.Capacitor;
+const isNative = !!(Cap && Cap.isNativePlatform && Cap.isNativePlatform());
+const LN = isNative ? (Cap.Plugins && Cap.Plugins.LocalNotifications) || Cap.registerPlugin('LocalNotifications') : null;
+let permission = isNative ? 'unknown' : 'web';
+
+async function ensurePermission(ask) {
+  if (!LN) return false;
+  try {
+    let p = await LN.checkPermissions();
+    if (p.display !== 'granted' && ask) p = await LN.requestPermissions();
+    permission = p.display;
+    return p.display === 'granted';
+  } catch (e) { permission = 'error'; return false; }
+}
+
+// Сколько карточек будет ждать в день today()+i, если до этого ничего не повторять
+const dueOn = i => state.cards.filter(c => c.due <= today() + i).length;
+
+async function scheduleReminders() {
+  if (!LN) return;
+  try {
+    const ids = Array.from({ length: REMIND_DAYS }, (_, i) => ({ id: REMIND_ID_BASE + i }));
+    await LN.cancel({ notifications: ids });
+    if (!state.settings.remind || permission !== 'granted') return;
+    const [hh, mm] = state.settings.time.split(':').map(Number);
+    const now = new Date(), list = [];
+    for (let i = 0; i < REMIND_DAYS; i++) {
+      const n = dueOn(i);
+      if (!n) continue;
+      const at = new Date(now.getFullYear(), now.getMonth(), now.getDate() + i, hh, mm, 0, 0);
+      if (at <= now) continue;
+      const deckParts = Object.entries(state.cards.filter(c => c.due <= today() + i).reduce((m, c) => (m[c.deck] = (m[c.deck] || 0) + 1, m), {}))
+        .map(([k, v]) => `${k}: ${v}`).join(', ');
+      list.push({
+        id: REMIND_ID_BASE + i,
+        title: `Пора повторить ${cardsWord(n)}`,
+        body: deckParts + ' · около ' + Math.max(1, Math.round(n * 0.3)) + ' мин',
+        schedule: { at, allowWhileIdle: true },
+        extra: { open: 'review' },
+      });
+    }
+    if (list.length) await LN.schedule({ notifications: list });
+  } catch (e) { console.error('schedule', e); }
+}
+
+async function testNotification() {
+  if (!LN) { toast('Уведомления работают только в приложении на телефоне'); return; }
+  if (!(await ensurePermission(true))) { toast('Разрешите уведомления в настройках телефона'); render(); return; }
+  await LN.schedule({ notifications: [{ id: 1, title: 'Проверка напоминания', body: `Сейчас к повторению: ${cardsWord(due().length)}`, schedule: { at: new Date(Date.now() + 10000), allowWhileIdle: true }, extra: { open: 'review' } }] });
+  toast('Уведомление придёт через 10 секунд. Можно свернуть приложение.');
+}
+
+// ---------- Экраны ----------
+let screen = 'home';
+let session = null;
+
+function go(s) { screen = s; render(); window.scrollTo(0, 0); }
+
+function render() {
+  document.querySelectorAll('nav [data-go]').forEach(b => b.setAttribute('aria-current', String(b.dataset.go === screen || (screen === 'review' && b.dataset.go === 'home'))));
+  const n = due().length; $('badge').textContent = n; $('badge').hidden = !n;
+  ({ home: renderHome, review: renderReview, cards: renderCards, more: renderMore })[screen]();
+}
+
+function renderHome() {
+  const n = due().length;
+  const next = state.cards.map(c => c.due).filter(d => d > today()).sort((a, b) => a - b)[0];
+  const permNote = isNative && state.settings.remind && permission !== 'granted'
+    ? `<p class="status">Напоминания выключены: нет разрешения на уведомления. <button class="link" id="askPerm">Разрешить</button></p>` : '';
+  $('app').innerHTML = `
+    <header><h1>Карточки</h1><p class="muted small">${state.offset ? 'Тестовая дата: ' + fmt(today()) : 'Сегодня ' + fmt(today())}</p></header>
+    ${permNote}
+    <section class="hero">
+      ${n ? `<p class="muted">Сегодня нужно повторить</p>
+             <div class="count">${n}</div>
+             <p class="muted small">${plural(n, 'карточку', 'карточки', 'карточек')} · примерно ${Math.max(1, Math.round(n * 0.3))} мин</p>
+             <button class="primary big" id="start">Начать повторение</button>`
+          : `<h2>На сегодня всё повторено</h2>
+             <p class="muted">${next !== undefined ? 'Следующие карточки появятся ' + inDays(next - today()) + (state.settings.remind && permission === 'granted' ? ', придёт напоминание в ' + state.settings.time : '') + '.' : 'Добавьте первые карточки, и приложение само напомнит, когда их повторить.'}</p>
+             <button class="primary big" id="addFirst">Добавить карточку</button>`}
+    </section>
+    ${decks().length ? `<section class="decks"><h2>Колоды</h2>
+      ${decks().map(d => { const k = due(d).length, all = state.cards.filter(c => c.deck === d).length;
+        return `<button class="deck" data-deck="${esc(d)}" ${k ? '' : 'disabled'}><span class="name">${esc(d)}</span><span class="n ${k ? 'has' : ''}">${k ? k + ' к повторению' : 'всего ' + all}</span></button>`; }).join('')}
+      </section>` : ''}`;
+  const s = $('start'); if (s) s.onclick = () => startSession('');
+  const a = $('addFirst'); if (a) a.onclick = () => go('cards');
+  const p = $('askPerm'); if (p) p.onclick = async () => { await ensurePermission(true); await scheduleReminders(); render(); };
+  document.querySelectorAll('[data-deck]').forEach(b => b.onclick = () => startSession(b.dataset.deck));
+}
+
+function startSession(deck) { session = { deck, total: due(deck).length, done: 0, revealed: false, current: null }; go('review'); }
+function nextCard() {
+  const list = due(session.deck);
+  list.sort((a, b) => (a.reps === 0) - (b.reps === 0) || a.due - b.due);
+  return list[0] || null;
+}
+
+function renderReview() {
+  if (!session) return go('home');
+  const c = session.current || (session.current = nextCard());
+  const pct = Math.min(100, Math.round(session.done / Math.max(1, session.total) * 100));
+  if (!c) {
+    const next = state.cards.map(x => x.due).filter(d => d > today()).sort((a, b) => a - b)[0];
+    $('app').innerHTML = `<div class="done"><div class="mark">Готово</div>
+      <h2>Вы повторили ${cardsWord(session.done)}</h2>
+      <p class="muted">${next !== undefined ? 'Следующее повторение ' + inDays(next - today()) + '.' : ''}</p>
+      <button class="primary big" id="home">На главную</button></div>`;
+    $('home').onclick = () => { session = null; go('home'); };
+    return;
+  }
+  $('app').innerHTML = `
+    <div class="topbar"><button class="link" id="back">← Выйти</button><div class="bar"><i style="width:${pct}%"></i></div><span class="muted small">${session.done} из ${session.total}</span></div>
+    <article class="card">
+      <div class="deckname">${esc(c.deck)}</div>
+      <div class="q">${esc(c.q)}</div>
+      ${session.revealed ? `<div class="a">${esc(c.a)}</div>` : ''}
+    </article>
+    ${session.revealed
+      ? `<p class="muted small" style="text-align:center">Насколько легко вы вспомнили ответ?</p>
+         <div class="grades">${GRADES.map(g => { const n = sm2(c, g.q).interval;
+           return `<button class="grade ${g.cls}" data-q="${g.q}">${g.name}<small>${n === 0 ? 'покажу ещё раз' : inDays(n)}</small></button>`; }).join('')}</div>`
+      : `<button class="primary big" id="show">Показать ответ</button>
+         <p class="muted small" style="text-align:center">Сначала попробуйте вспомнить ответ сами</p>`}`;
+  $('back').onclick = () => { session = null; go('home'); };
+  if (!session.revealed) $('show').onclick = () => { session.revealed = true; renderReview(); };
+  document.querySelectorAll('.grade').forEach(b => b.onclick = () => grade(+b.dataset.q));
+}
+
+function grade(q) {
+  const i = state.cards.findIndex(c => c.id === session.current.id);
+  state.cards[i] = sm2(state.cards[i], q);
+  if (q < 3) { state.cards[i].due = today(); session.total++; }
+  session.done++; session.current = null; session.revealed = false;
+  save(); render(); scheduleReminders();
+}
+
+function renderCards() {
+  const list = [...state.cards].sort((a, b) => a.due - b.due);
+  $('app').innerHTML = `
+    <header><h1>Мои карточки</h1></header>
+    <form class="form" id="addForm">
+      <h2>Новая карточка</h2>
+      <label>Вопрос<input id="fQ" required placeholder="Например: какой регистр — счётчик для LOOP?"></label>
+      <label>Ответ<input id="fA" required placeholder="CX"></label>
+      <label>Колода<input id="fD" list="deckList" required value="${esc(decks()[0] || 'Общая')}"></label>
+      <datalist id="deckList">${decks().map(d => `<option value="${esc(d)}">`).join('')}</datalist>
+      <button class="primary" type="submit">Добавить</button>
+    </form>
+    <section class="list">
+      <p class="muted small">${cardsWord(list.length)}</p>
+      ${list.map(c => `<div class="item"><div class="txt"><div class="q">${esc(c.q)}</div>
+        <div class="meta">${esc(c.deck)} · ${c.reps === 0 && c.interval === 0 ? 'новая, ' : ''}повторить ${inDays(c.due - today())}</div></div>
+        <button class="del" data-del="${c.id}" aria-label="Удалить карточку">✕</button></div>`).join('') || '<p class="muted">Пока пусто.</p>'}
+    </section>`;
+  $('addForm').onsubmit = e => {
+    e.preventDefault();
+    state.cards.push(newCard($('fQ').value.trim(), $('fA').value.trim(), $('fD').value.trim() || 'Общая'));
+    save(); render(); scheduleReminders(); toast('Карточка добавлена в сегодняшнее повторение');
+  };
+  document.querySelectorAll('[data-del]').forEach(b => b.onclick = () => { state.cards = state.cards.filter(c => c.id !== b.dataset.del); save(); render(); scheduleReminders(); toast('Карточка удалена'); });
+}
+
+// ---------- Ещё ----------
+function splitLine(line, sep) {
+  const res = []; let cur = '', inQ = false;
+  for (let i = 0; i < line.length; i++) { const ch = line[i];
+    if (ch === '"') { if (inQ && line[i + 1] === '"') { cur += '"'; i++; } else inQ = !inQ; }
+    else if (ch === sep && !inQ) { res.push(cur); cur = ''; } else cur += ch; }
+  res.push(cur); return res;
+}
+function parseCSV(text) {
+  const lines = text.replace(/^﻿/, '').split(/\r?\n/).filter(l => l.trim());
+  const sep = lines.length && lines[0].includes(';') ? ';' : ',';
+  return lines.map(l => splitLine(l, sep).map(s => s.trim()))
+    .filter(c => c.length >= 2 && c[0] && c[1] && !/^(вопрос|question|front)$/i.test(c[0]))
+    .map(c => newCard(c[0], c[1], c[2] || 'Импорт'));
+}
+const csvCell = s => /[;"\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
+async function copy(area) { try { await navigator.clipboard.writeText(area.value); toast('Скопировано'); } catch (e) { area.focus(); area.select(); toast('Текст выделен, скопируйте его'); } }
+
+function renderMore() {
+  const permText = !isNative ? 'Это веб-версия: уведомления работают только в приложении на телефоне.'
+    : permission === 'granted' ? (state.settings.remind ? `Напоминание придёт в ${state.settings.time} в те дни, когда есть карточки, даже если приложение закрыто.` : 'Напоминания выключены.')
+    : 'Нет разрешения на уведомления. Нажмите «Проверить», телефон спросит разрешение.';
+  $('app').innerHTML = `
+    <header><h1>Ещё</h1></header>
+    <details open><summary>Напоминания</summary><div>
+      <label class="switch">Напоминать о повторении<input type="checkbox" id="remOn" ${state.settings.remind ? 'checked' : ''}></label>
+      <label>Во сколько<input type="time" id="remTime" value="${state.settings.time}"></label>
+      <p class="status">${permText}</p>
+      <button id="testN">Проверить: прислать через 10 секунд</button>
+    </div></details>
+    <details><summary>Загрузить карточки из таблицы</summary><div>
+      <p class="muted small">Каждая строка: <b>вопрос;ответ;колода</b>. Такой файл сохраняется из Excel как «CSV UTF-8». Колоду можно не указывать.</p>
+      <input type="file" id="csvFile" accept=".csv,.txt,text/csv,text/plain">
+      <textarea id="csvText" spellcheck="false" placeholder="Что делает fork()?;Создаёт копию процесса;ОС UNIX"></textarea>
+      <button class="primary" id="doImport">Загрузить</button><p class="muted small" id="importInfo"></p>
+    </div></details>
+    <details><summary>Сохранить копию карточек</summary><div>
+      <p class="muted small">Тот же формат таблицы. Подходит и для Anki.</p>
+      <button id="doExport">Показать</button><div id="expBox" hidden><textarea id="exportText" readonly></textarea><button id="copyExp">Копировать</button></div>
+    </div></details>
+    <details id="dTest"><summary>Для проверки прототипа</summary><div>
+      <p class="muted small">Перемотка даты показывает, как карточки возвращаются через дни. Сейчас: <b>${fmt(today())}</b>${state.offset ? ` (+${state.offset} дн.)` : ''}.</p>
+      <div class="row"><button id="d1">+1 день</button><button id="d7">+7 дней</button><button id="d0" ${state.offset ? '' : 'disabled'}>Вернуть сегодня</button></div>
+      <div class="scroll"><table><thead><tr><th>Вопрос</th><th>Интервал</th><th>Лёгкость</th><th>Подряд</th></tr></thead><tbody>
+        ${state.cards.map(c => `<tr><td>${esc(c.q)}</td><td class="num">${c.interval} дн.</td><td class="num">${c.ease.toFixed(2)}</td><td class="num">${c.reps}</td></tr>`).join('')}
+      </tbody></table></div>
+      <button id="reset">Вернуть примерные карточки</button>
+    </div></details>`;
+
+  $('remOn').onchange = async e => {
+    state.settings.remind = e.target.checked; save();
+    if (e.target.checked) await ensurePermission(true);
+    await scheduleReminders(); renderMore();
+  };
+  $('remTime').onchange = async e => { if (!e.target.value) return; state.settings.time = e.target.value; save(); await scheduleReminders(); renderMore(); toast('Время напоминания: ' + state.settings.time); };
+  $('testN').onclick = testNotification;
+  $('csvFile').onchange = e => { const f = e.target.files[0]; if (!f) return; const r = new FileReader(); r.onload = () => { $('csvText').value = r.result; }; r.readAsText(f, 'utf-8'); };
+  $('doImport').onclick = () => {
+    const cards = parseCSV($('csvText').value);
+    if (!cards.length) { $('importInfo').textContent = 'Не нашлось строк вида «вопрос;ответ».'; return; }
+    state.cards.push(...cards); save(); scheduleReminders(); toast(`Загружено: ${cardsWord(cards.length)}`); $('csvText').value = ''; render();
+  };
+  $('doExport').onclick = () => { $('exportText').value = state.cards.map(c => [c.q, c.a, c.deck].map(csvCell).join(';')).join('\n'); $('expBox').hidden = false; };
+  $('copyExp').onclick = () => copy($('exportText'));
+  const shift = n => () => { state.offset = n === 0 ? 0 : state.offset + n; save(); scheduleReminders(); render(); $('dTest').open = true; toast('Дата: ' + fmt(today())); };
+  $('d1').onclick = shift(1); $('d7').onclick = shift(7); $('d0').onclick = shift(0);
+  let sure = false;
+  $('reset').onclick = e => { if (!sure) { sure = true; e.target.textContent = 'Нажмите ещё раз для подтверждения'; return; } state.cards = sample(); state.offset = 0; save(); scheduleReminders(); render(); toast('Примерные карточки восстановлены'); };
+}
+
+// ---------- Запуск ----------
+document.querySelectorAll('nav [data-go]').forEach(b => b.onclick = () => { session = null; go(b.dataset.go); });
+
+async function init() {
+  load(); render();
+  if (!LN) return;
+  await ensurePermission(state.settings.remind);   // при первом запуске Android спросит разрешение
+  await scheduleReminders();
+  render();
+  // нажатие на уведомление — сразу к повторению
+  LN.addListener('localNotificationActionPerformed', () => { if (due().length) startSession(''); else go('home'); });
+  // при возврате в приложение: новый день мог наступить, пересчитать
+  document.addEventListener('visibilitychange', () => { if (!document.hidden) { if (screen === 'home') render(); scheduleReminders(); } });
+}
+init();
+})();
+</script>
+</body>
+</html>

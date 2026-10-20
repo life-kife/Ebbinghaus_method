@@ -1,0 +1,10 @@
+{
+  "appId": "ru.ebbinghaus.cards",
+  "appName": "Карточки",
+  "webDir": "www",
+  "plugins": {
+    "LocalNotifications": {
+      "iconColor": "#2F47C4"
+    }
+  }
+}
