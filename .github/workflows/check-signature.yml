@@ -20,6 +20,6 @@ jobs:
           APKSIGNER=$(ls $ANDROID_HOME/build-tools/*/apksigner | sort -V | tail -1)
           for id in 12231098383 12231294303 12232319466 12506833162; do
             mkdir -p a$id && gh api repos/${{ github.repository }}/actions/artifacts/$id/zip > a$id/x.zip && (cd a$id && unzip -oq x.zip)
-            echo "== artifact $id"; $APKSIGNER verify --print-certs a$id/*.apk | grep -E "SHA-256"
+            C=$($APKSIGNER verify --print-certs a$id/*.apk | grep -m1 "SHA-256" | sed "s/.*: //"); echo "::notice title=artifact $id::$C"
           done
-          echo "== HOME=$HOME ANDROID_USER_HOME=$ANDROID_USER_HOME ANDROID_SDK_HOME=$ANDROID_SDK_HOME ANDROID_PREFS_ROOT=$ANDROID_PREFS_ROOT"
+          echo "::notice title=env::HOME=$HOME ANDROID_USER_HOME=$ANDROID_USER_HOME ANDROID_SDK_HOME=$ANDROID_SDK_HOME ANDROID_PREFS_ROOT=$ANDROID_PREFS_ROOT"
