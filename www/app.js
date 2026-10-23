@@ -895,7 +895,7 @@ function renderMore() {
   const inner = html => `<div class="panel" style="border:0;border-radius:0">${html}</div>`;
   const dk = decks();
   $('app').innerHTML = `
-    <header><p class="eyebrow">Карточки 1.3</p><h1>Настройки</h1></header>
+    <header><p class="eyebrow">Карточки ${window.BUILD ? window.BUILD.version + ' · сборка ' + window.BUILD.commit : '1.3'}</p><h1>Настройки</h1></header>
     <section class="group">
       <div class="deckrow"><div class="nm">${ICON.palette.replace('<svg', '<svg style="width:20px;height:20px;stroke:var(--accent);stroke-width:2;fill:none"')}<span>Тема</span></div>
         <div class="themes">${Object.entries(TH.P).map(([k, p]) => `<button class="theme" data-pal="${k}" aria-pressed="${th.pal === k}"><i style="background:${p[TH.isDark() ? 'dark' : 'light'][6]}"></i><span>${p.name}</span></button>`).join('')}</div>
