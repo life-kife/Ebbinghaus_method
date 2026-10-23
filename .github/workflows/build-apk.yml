@@ -33,13 +33,36 @@ jobs:
           npx cap sync android
 
       - name: Постоянный ключ подписи (чтобы обновления ставились поверх)
-        run: mkdir -p ~/.android && cp keystore/debug.keystore ~/.android/debug.keystore
+        run: |
+          python3 - <<'PY'
+          p = 'android/app/build.gradle'
+          s = open(p).read()
+          block = '''android {
+              signingConfigs {
+                  debug {
+                      storeFile rootProject.file('../keystore/debug.keystore')
+                      storePassword 'android'
+                      keyAlias 'androiddebugkey'
+                      keyPassword 'android'
+                  }
+              }'''
+          assert 'android {' in s
+          open(p, 'w').write(s.replace('android {', block, 1))
+          PY
+          grep -n "keystore" android/app/build.gradle
 
       - name: Сборка APK
         working-directory: android
         run: |
           chmod +x gradlew
           ./gradlew assembleDebug --no-daemon
+
+      - name: Проверка подписи
+        run: |
+          APKSIGNER=$(ls $ANDROID_HOME/build-tools/*/apksigner | sort -V | tail -1)
+          CERT=$($APKSIGNER verify --print-certs android/app/build/outputs/apk/debug/app-debug.apk | grep -m1 "SHA-256" | sed 's/.*: //')
+          echo "Подпись: $CERT"
+          test "$CERT" = "b7c36cf32e4279796286cf0e62e14ef1ec256adc5d6f18bfffdf1b53de2f6c36"
 
       - uses: actions/upload-artifact@v4
         with:
