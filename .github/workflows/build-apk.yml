@@ -23,7 +23,10 @@ jobs:
           java-version: 17
 
       - name: Номер сборки
-        run: echo "window.BUILD = { version: '$(node -p "require('./package.json').version")', commit: '${GITHUB_SHA::7}' };" > www/build.js
+        run: |
+          V=$(node -p "require('./package.json').version")
+          echo "window.BUILD = { version: '$V', commit: '${GITHUB_SHA::7}' };" > www/build.js
+          cat www/build.js
 
       - name: Установка зависимостей
         run: npm install --no-audit --no-fund
