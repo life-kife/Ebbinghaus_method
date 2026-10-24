@@ -35,7 +35,7 @@ jobs:
         run: |
           if [ ! -d android ]; then npx cap add android; fi
           npx capacitor-assets generate --android --iconBackgroundColor '#2F47C4' --iconBackgroundColorDark '#2F47C4' --splashBackgroundColor '#EEF0F3' --splashBackgroundColorDark '#12151C'
-          sed -i 's/versionName "1.0"/versionName "1.3.1"/; s/versionCode 1$/versionCode 5/' android/app/build.gradle
+          sed -i 's/versionName "1.0"/versionName "1.4"/; s/versionCode 1$/versionCode 6/' android/app/build.gradle
           npx cap sync android
 
       - name: Постоянный ключ подписи (чтобы обновления ставились поверх)

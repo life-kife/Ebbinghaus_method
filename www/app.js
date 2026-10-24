@@ -1,12 +1,12 @@
 (() => {
 'use strict';
 const KEY = 'ebb-cards-v1';                 // ключ хранилища не меняем, иначе пропадут карточки
-const DATA_VERSION = 3;
+const DATA_VERSION = 4;
 const DAY = 86400000;
 const REMIND_DAYS = 30, REMIND_ID_BASE = 1000;
 const MAX_PHOTOS = 6;
 const PALETTE = 8;
-const C = window.CONTENT, S = window.SCHED, TH = window.THEME;
+const C = window.CONTENT, S = window.SCHED, TH = window.THEME, M = window.MEMORY, SKY = window.SKY;
 const DECK_TYPES = { facts: { name: 'Слова и факты', limit: 15 }, deep: { name: 'Глубокие вопросы', limit: 7 }, custom: { name: 'Своё число' } };
 
 const OLD_SAMPLES = {
@@ -87,6 +87,7 @@ function load() {
     if (c.fresh === undefined) c.fresh = c.reps === 0 && c.interval === 0;
     if (c.nom === undefined) c.nom = c.due;
     if (c.step === undefined) c.step = 0;
+    if (c.created === undefined) c.created = c.start != null ? Math.min(c.start, realToday() + (state.offset || 0)) : Math.min(c.due, realToday() + (state.offset || 0));
   }
   state.v = DATA_VERSION;
   assignColors(); save(true);
@@ -129,7 +130,9 @@ function backlogWarnings() {
 // ---------- Карточки: создание и повторение ----------
 function newCard(q, a, deck, opts = {}) {
   const c = { id: uid(), q, a, deck, due: today(), nom: today(), interval: 0, ease: 2.5, reps: 0, step: 0, fresh: true,
-    mode: opts.mode || cfg(deck).mode, qPh: opts.qPh || [], aPh: opts.aPh || [] };
+    mode: opts.mode || cfg(deck).mode, qPh: opts.qPh || [], aPh: opts.aPh || [], created: today() };
+  if (opts.hook) c.hook = opts.hook;
+  if (opts.capsule) c.capsule = opts.capsule;
   if (c.mode === 'plan') c.plan = opts.plan || { kind: 'classic' };
   setStart(c, opts.start ?? today());
   return c;
@@ -271,9 +274,10 @@ function render() {
   const bare = screen === 'review' || screen === 'onboarding';
   $('nav').hidden = bare;
   $('app').className = 'wrap' + (bare ? ' bare' : '');
-  document.querySelectorAll('nav [data-go]').forEach(b => b.setAttribute('aria-current', String(b.dataset.go === screen)));
+  document.querySelectorAll('nav [data-go]').forEach(b => b.setAttribute('aria-current', String(b.dataset.go === (screen === 'stats' ? 'home' : screen))));
   const n = todayQ().length; $('badge').textContent = n; $('badge').hidden = !n;
-  ({ onboarding: renderOnboarding, home: renderHome, review: renderReview, cal: renderCal, cards: renderCards, more: renderMore })[screen]();
+  if (skyInst && screen !== 'home') { skyInst.stop(); skyInst = null; }
+  ({ onboarding: renderOnboarding, home: renderHome, review: renderReview, cal: renderCal, cards: renderCards, more: renderMore, stats: renderStats })[screen]();
 }
 const warnHtml = () => backlogWarnings().map(w => `<p class="note warn">В колоде «${esc(w.deck)}» карточки не помещаются в лимит, очередь тянется до ${fmtY(w.d)}. Добавляйте новые реже или увеличьте лимит в настройках колоды.</p>`).join('');
 
@@ -333,6 +337,67 @@ const EMPTY_ART = `<svg viewBox="0 0 200 140" fill="none"><rect x="46" y="22" wi
   <rect x="44" y="26" width="112" height="88" rx="16" fill="var(--surface)" stroke="var(--line)" stroke-width="2"/>
   <rect x="64" y="50" width="72" height="9" rx="4.5" fill="var(--sunken)"/><rect x="74" y="68" width="52" height="9" rx="4.5" fill="var(--sunken)"/>
   <circle cx="150" cy="112" r="20" fill="var(--accent)"/><path d="M150 103v18M141 112h18" stroke="var(--accent-ink)" stroke-width="3.4" stroke-linecap="round"/></svg>`;
+// ---------- Небо, экзамен, лучшее время ----------
+let skyInst = null, skyFull = null;
+function skyData() {
+  return { cards: state.cards.filter(c => !c.archived), decks: activeDecks(), R: c => M.R(c, today()), S: c => M.stability(c), colorIdx: d => state.colors[d] ?? 7 };
+}
+const pct = x => x == null ? '—' : Math.round(x * 100) + '%';
+function examOf(deck) {
+  const own = cfg(deck).exam;
+  if (own && own > today()) return own;
+  const ex = state.cards.filter(c => c.deck === deck && !c.archived && c.mode === 'plan' && c.plan && c.plan.kind === 'exam' && c.plan.exam > today()).map(c => c.plan.exam);
+  return ex.length ? Math.min(...ex) : null;
+}
+function readinessBlock(deck, compact) {
+  const ex = examOf(deck); if (!ex) return '';
+  const r = M.readiness(state.cards, deck, ex, today()); if (!r) return '';
+  const lvl = r.withPlan >= 0.9 ? 'good' : r.withPlan >= 0.75 ? 'hard' : 'again';
+  return `<section class="panel exam">
+    <div class="top"><div><p class="eyebrow"><i class="dot" style="background:${deckColor(deck)}"></i> ${esc(deck)}</p><h2>Экзамен ${inDays(r.days)}${r.days > 1 ? `, ${fmtY(ex)}` : ''}</h2></div><b class="bigpct" style="color:var(--${lvl})">${pct(r.withPlan)}</b></div>
+    <div class="ebar"><i style="width:${Math.round(r.now * 100)}%" class="e-now"></i><i style="left:${Math.round(r.withPlan * 100)}%" class="e-mark"></i><i style="left:90%" class="e-goal"></i></div>
+    <p class="muted small">Прогноз на день экзамена, если повторять в срок: <b>${pct(r.withPlan)}</b>. Сейчас вы помните ${pct(r.now)}, а если остановиться, к экзамену останется ${pct(r.stop)}.${r.notStarted ? ` Ещё ${cardsWord(r.notStarted)} начнутся только после экзамена: перенесите их раньше.` : ''}${!compact && r.withPlan < 0.9 ? ' До цели 90% не хватает: начните новые карточки раньше или повторяйте без пропусков.' : ''}</p>
+  </section>`;
+}
+function homeExtras() {
+  const live = state.cards.filter(c => !c.archived);
+  if (!live.length) return '';
+  const mem = M.memoryNow(state.cards, today()), learned = live.filter(c => !c.fresh).length;
+  const bt = M.bestTime(state.hist, state.settings.time).suggestion;
+  const showBt = bt && !(state.settings.btDismiss && today() - state.settings.btDismiss < 30);
+  return `<button class="skyp" id="skyPanel" aria-label="Открыть небо памяти"><canvas id="skyCv"></canvas>
+      <span class="skyov"><span class="sk-e">Небо памяти</span><b>${pct(mem)}</b><span class="sk-s">${learned ? `память сейчас · ${cardsWord(learned)} ${plural(learned, 'светится', 'светятся', 'светятся')}` : 'звёзды загорятся после первых повторений'}</span></span></button>
+    ${activeDecks().map(d => readinessBlock(d, true)).join('')}
+    ${showBt ? `<div class="note bt"><span>Судя по истории, лучше всего вы вспоминаете ${({ 'Утро': 'утром', 'День': 'днём', 'Вечер': 'вечером', 'Ночь': 'ночью' })[bt.part]}${bt.gain != null ? `: на ${bt.gain}% точнее, чем во время нынешнего напоминания` : ''}. Перенести напоминание на ${bt.time}?</span>
+      <span class="row2"><button id="btYes" class="primary">Перенести</button><button id="btNo">Не сейчас</button></span></div>` : ''}`;
+}
+function bindHomeExtras() {
+  const cv = $('skyCv');
+  if (cv) { if (skyInst) skyInst.stop(); skyInst = SKY.create(cv, { full: false }); skyInst.set(skyData()); $('skyPanel').onclick = openSky; }
+  const y = $('btYes'); if (y) y.onclick = async () => { const bt = M.bestTime(state.hist, state.settings.time).suggestion; state.settings.time = bt.time; save(); await scheduleReminders(); render(); toast('Напоминание теперь в ' + bt.time); };
+  const n = $('btNo'); if (n) n.onclick = () => { state.settings.btDismiss = today(); save(); render(); };
+}
+function openSky() {
+  buzz('LIGHT');
+  const decksL = activeDecks();
+  $('layer2').innerHTML = `<div class="skyfull" id="skyFull"><canvas id="skyBig"></canvas>
+    <div class="skytop"><div><p class="sk-e">Небо памяти</p><h2>${pct(M.memoryNow(state.cards, today()))} <small>память сейчас</small></h2></div><button class="vx" id="skyX" aria-label="Закрыть">✕</button></div>
+    <div class="skyinfo" id="skyInfo"><p>Каждая звезда — карточка, созвездие — колода. Чем ярче звезда, тем вероятнее вы её сейчас вспомните. Нажмите на звезду, чтобы открыть карточку.</p></div>
+    <div class="skyleg">${decksL.map(d => `<span><i style="background:${SKY.STAR[(state.colors[d] ?? 7) % 8]}"></i>${esc(d)} · ${pct(M.memoryNow(state.cards, today(), d))}</span>`).join('')}</div></div>`;
+  skyFull = SKY.create($('skyBig'), { full: true }); skyFull.set(skyData());
+  $('skyX').onclick = closeSky;
+  $('skyBig').onclick = e => {
+    const r = e.target.getBoundingClientRect(), s = skyFull.hit(e.clientX - r.left, e.clientY - r.top);
+    if (!s) return;
+    skyFull.select(s); buzz('LIGHT');
+    const c = s.c, R = M.R(c, today());
+    $('skyInfo').innerHTML = `<p class="sk-e" style="color:${SKY.STAR[(state.colors[c.deck] ?? 7) % 8]}">${esc(c.deck)}</p><p class="sk-q">${esc(c.q)}</p>
+      <p>${c.fresh ? 'Ещё не изучалась: звезда пока не горит.' : `Заряд ${pct(R)}. ${c.due <= today() ? 'Пора повторить.' : `Повторение ${inDays(c.due - today())}.`}`}</p><button id="skyOpen">Открыть карточку</button>`;
+    $('skyOpen').onclick = () => { closeSky(); openSheet(c.id); };
+  };
+}
+function closeSky() { if (skyFull) { skyFull.stop(); skyFull = null; } $('layer2').innerHTML = ''; }
+
 function renderHome() {
   const n = todayQ().length, done = doneToday(), st = streak(), t = today(), over = overflowNow();
   const nextDays = [...fc().days.keys()].filter(d => d > t).sort((a, b) => a - b);
@@ -359,13 +424,15 @@ function renderHome() {
         </div></div>
       ${n ? `<button class="primary big" id="start">Начать повторение</button>` : over > 0 ? `<button class="big" id="extra">Повторить ещё ${over} сверх лимита</button>` : ''}
     </section>
+    ${homeExtras()}
     ${warnHtml()}
     <section class="decks"><h2>Колоды</h2>
       ${activeDecks().map(d => { const k = todayQ(d).length, all = state.cards.filter(c => c.deck === d && !c.archived).length;
         return `<button class="deck" data-deck="${esc(d)}"><i class="dot" style="background:${deckColor(d)};width:12px;height:12px"></i><span class="name">${esc(d)}</span>
           <span class="n ${k ? 'has' : ''}">${k ? `${k} из ${limitOf(d)} сегодня` : cardsWord(all)}</span><span class="chev">›</span></button>`; }).join('')}</section>`}
     <button class="panel" id="weekPanel"><div class="top" style="align-items:center"><h2>Неделя</h2><span class="muted small">${st ? `${daysWord(st)} подряд · ` : ''}календарь ›</span></div>
-      <div class="week">${week.map(d => `<div><i class="${state.log[d] ? 'on' : ''} ${d === t ? 'today' : ''}">${state.log[d] || ''}</i>${wd(d)}</div>`).join('')}</div></button>`;
+      <div class="week">${week.map(d => `<div><i class="${state.log[d] ? 'on' : ''} ${d === t ? 'today' : ''}">${state.log[d] || ''}</i>${wd(d)}</div>`).join('')}</div></button>
+    ${empty ? '' : `<button class="panel linkp" id="statsLink"><span class="t"><b>Моя память</b><small class="muted">Личная кривая забывания по колодам и лучшее время для повторения</small></span><span class="chev">›</span></button>`}`;
   const s = $('start'); if (s) s.onclick = () => startSession('');
   const ex = $('extra'); if (ex) ex.onclick = () => startSession('', true);
   const a = $('addFirst'); if (a) a.onclick = () => openSheet();
@@ -375,6 +442,8 @@ function renderHome() {
   };
   const p = $('askPerm'); if (p) p.onclick = async () => { await ensurePermission(true); await scheduleReminders(); render(); };
   $('weekPanel').onclick = () => { calSel = today(); calMonth = null; go('cal'); };
+  const sl = $('statsLink'); if (sl) sl.onclick = () => go('stats');
+  bindHomeExtras();
   document.querySelectorAll('[data-deck]').forEach(b => b.onclick = () => {
     if (todayQ(b.dataset.deck).length) startSession(b.dataset.deck); else { cardFilter = b.dataset.deck; go('cards'); }
   });
@@ -413,14 +482,26 @@ function renderReview() {
   $('app').innerHTML = `
     <div class="topbar"><button class="link" id="back" aria-label="Выйти">✕</button><div class="bar"><i style="width:${pct}%"></i></div><span class="muted small" style="font-variant-numeric:tabular-nums">${session.done}/${session.total}</span></div>
     <div class="stage ${fresh ? 'enter' : ''}"><div class="flip ${session.revealed ? 'turned' : ''}" id="flip">
-      <article class="face front"><span class="tag"><i class="dot" style="background:${col}"></i>${esc(c.deck)}${c.mode === 'plan' ? ' · по плану' : ''}</span><div class="q">${esc(c.q)}</div>${phGrid(c.qPh)}<p class="hint">${session.hint}</p></article>
-      <article class="face back"><span class="tag"><i class="dot" style="background:${col}"></i>${esc(c.deck)}</span><div class="qsmall">${esc(c.q)}</div><div class="a">${esc(c.a)}</div>${phGrid(c.aPh)}</article>
+      <article class="face front"><span class="tag"><i class="dot" style="background:${col}"></i>${esc(c.deck)}${c.mode === 'plan' ? ' · по плану' : ''}</span><div class="q">${esc(c.q)}</div>${phGrid(c.qPh)}${c.hook && failedBefore(c) ? `<button class="hintbtn" id="hookBtn">Подсказка</button><div class="hookbox" id="hookBox" hidden>${esc(c.hook)}</div>` : ''}<p class="hint">${session.hint}</p></article>
+      <article class="face back"><span class="tag"><i class="dot" style="background:${col}"></i>${esc(c.deck)}</span><div class="qsmall">${esc(c.q)}</div><div class="a">${esc(c.a)}</div>${phGrid(c.aPh)}${capsuleDue(c) ? capsuleHtml(c) : ''}</article>
     </div></div>
     <div id="actions">${actions(c)}</div>`;
   fitFlip(); hydrate($('flip'), fitFlip); bindViewer($('flip'));
   $('back').onclick = () => { session = null; go('home'); };
   $('flip').onclick = reveal;
+  const hb = $('hookBtn'); if (hb) hb.onclick = e => { e.stopPropagation(); $('hookBox').hidden = false; hb.hidden = true; fitFlip(); buzz('LIGHT'); };
   bindActions();
+}
+const snapNow = () => ({ n: state.cards.filter(x => !x.archived).length, st: streak() });
+const failedBefore = c => state.hist.some(h => h.id === c.id && h.g === 1);
+const capsuleDue = c => c.capsule && c.capsule.text && !c.capsule.opened && today() >= c.capsule.open;
+function capsuleHtml(c) {
+  const k = c.capsule, made = c.created ?? k.made ?? today(), passed = today() - made;
+  const reps = state.hist.filter(h => h.id === c.id).length;
+  const sn = k.snap || {};
+  return `<div class="capsule"><p class="cap-h">Капсула времени · ${fmtY(made)}${dateOf(made).getUTCFullYear() === dateOf(today()).getUTCFullYear() ? ' ' + dateOf(made).getUTCFullYear() : ''}</p>
+    <p class="cap-t">${esc(k.text)}</p>
+    <p class="cap-c">Прошло ${ivWord(Math.max(1, passed))}. ${sn.n ? `Тогда у вас было ${cardsWord(sn.n)}${sn.st ? ` и серия ${daysWord(sn.st)}` : ''}, сейчас ${cardsWord(state.cards.filter(x => !x.archived).length)}. ` : ''}Эту карточку вы повторили ${reps} ${plural(reps, 'раз', 'раза', 'раз')}.</p></div>`;
 }
 function actions(c) {
   if (!session.revealed) return `<button class="primary big" id="show">Показать ответ</button>`;
@@ -454,12 +535,25 @@ function grade(q) {
   if (q === 'p') res = applyPlan(card); else applySmart(card, q);
   if (q === 1) session.total++;
   state.log[today()] = (state.log[today()] || 0) + 1;
-  state.hist.push({ d: today(), id: card.id, g: q, k: card.deck, q: card.q.slice(0, 120) });
+  const now = new Date();
+  state.hist.push({ d: today(), m: now.getHours() * 60 + now.getMinutes(), id: card.id, g: q, k: card.deck, q: card.q.slice(0, 120) });
+  if (capsuleDue(card)) card.capsule.opened = today();
   if (state.hist.length > 20000) state.hist.splice(0, state.hist.length - 20000);
   session.tally[q]++; session.done++; session.current = null; session.revealed = false;
   buzz(q === 1 ? 'MEDIUM' : 'LIGHT');
   if (res === 'finished') toast(card.plan.after === 'stop' ? 'План к экзамену завершён, карточка в архиве' : 'План завершён');
   changed(); render();
+  if (q === 1 && card.hook) showHook(card);
+}
+function showHook(c) {
+  menuOpen = true;
+  $('layer2').innerHTML = `<div class="menu-bg" id="mbg"></div><div class="menu"><div class="in">
+    <p class="eyebrow">Зацепка</p><h2 style="font:600 1.15rem var(--f-display)">${esc(c.q)}</h2>
+    <div class="hookbox big">${esc(c.hook)}</div>
+    <p class="muted small">Ответ: ${esc(c.a)}</p>
+    <button class="primary big" id="hookOk">Запомнил</button></div></div>`;
+  const close = () => { menuOpen = false; $('layer2').innerHTML = ''; };
+  $('mbg').onclick = close; $('hookOk').onclick = close;
 }
 
 // ---------- Просмотр фото ----------
@@ -509,7 +603,7 @@ function renderCal() {
   for (let i = 0; i < lead; i++) cells += '<div class="cell out"></div>';
   for (let k = 0; k < dim; k++) {
     const d = calMonth + k, inf = dayInfo(d, until);
-    const cls = ['cell', inf.kind, inf.count ? 'has' : '', d === t ? 'today' : '', d === calSel ? 'sel' : ''].join(' ');
+    const cls = ['cell', inf.kind, inf.count ? 'has' : '', d === t ? 'today' : '', d === calSel ? 'sel' : '', examDays().has(d) ? 'exam' : ''].join(' ');
     cells += `<button class="${cls}" data-d="${d}"><span class="num">${k + 1}</span>
       <span class="dots">${inf.decks.slice(0, 4).map(dk => `<i style="background:${deckColor(dk)}"></i>`).join('')}</span><span class="cnt">${inf.count || ''}</span></button>`;
   }
@@ -532,6 +626,7 @@ function renderCal() {
   const ct = $('calToday'); if (ct) ct.onclick = () => { calSel = t; calMonth = monthStart(t); renderCal(); };
   bindDayPanel();
 }
+function examDays() { const m = new Map(); for (const d of activeDecks()) { const e = examOf(d); if (e) { if (!m.has(e)) m.set(e, new Set()); m.get(e).add(d); } } return m; }
 function rowCard(c, right, extra) {
   return `<button class="item" data-edit="${c.id}"><i class="bar-l" style="background:${deckColor(c.deck)}"></i>
     <span class="txt"><span class="q">${esc(c.q)}</span><span class="meta">${esc(c.deck)}${c.mode === 'plan' ? ' · по плану' : ''}${extra || ''}</span></span>${right || ''}</button>`;
@@ -573,6 +668,10 @@ function dayPanel(d, until) {
     }
   }
   const addLabel = d < t ? 'Добавить как выученную в этот день' : 'Добавить карточку на этот день';
+  const exs = [...(examDays().get(d) || [])].filter(dk => !calDeck || dk === calDeck);
+  if (exs.length) body = `<p class="note warn">Экзамен: ${exs.map(esc).join(', ')}</p>` + body;
+  const caps = state.cards.filter(c => c.capsule && c.capsule.text && !c.capsule.opened && c.capsule.open === d && (!calDeck || c.deck === calDeck));
+  if (caps.length) body += `<p class="note">В этот день становится доступна капсула времени: ${caps.map(c => `«${esc(c.q.slice(0, 40))}»`).join(', ')}. Она откроется при первом повторении карточки.</p>`;
   return `<div class="day-head"><h2>${cap(fmtLong(d))}${dateOf(d).getUTCFullYear() !== dateOf(t).getUTCFullYear() ? ' ' + dateOf(d).getUTCFullYear() : ''}</h2><span class="kind ${label[1]}">${label[0]}</span></div>${body}
     <button id="calAdd">${ICON.plus.replace('<svg', '<svg style="width:18px;height:18px;vertical-align:-3px;stroke:currentColor;stroke-width:2.4;fill:none"')} ${addLabel}</button>`;
 }
@@ -600,6 +699,7 @@ function renderCards() {
         return `<button class="item" data-edit="${c.id}"><i class="bar-l" style="background:${deckColor(c.deck)}"></i>
         ${ph ? `<img class="thumb" data-ph="${ph}" data-kind="thumb" alt="">` : ''}
         <span class="txt"><span class="q">${esc(c.q)}</span><span class="meta">${esc(c.deck)}${c.mode === 'plan' ? ' · по плану' : ''}${c.fresh ? ' · новая' : ''}${nph ? ` · фото: ${nph}` : ''}</span></span>
+        ${!c.fresh && !c.archived ? (() => { const r = M.R(c, today()); return `<span class="bat sm ${r >= 0.85 ? 'hi' : r >= 0.6 ? 'mid' : 'lo'}" title="Заряд ${pct(r)}"><i style="width:${Math.round(r * 100)}%"></i></span>`; })() : ''}
         <span class="when ${!c.archived && d <= 0 ? 'now' : ''}">${c.archived ? 'в архиве' : d <= 0 ? 'сегодня' : d === 1 ? 'завтра' : fmtS(c.due)}</span></button>`; }).join('')
         || `<div class="panel center"><div class="empty-art">${EMPTY_ART}</div><h2>${q ? 'Ничего не нашлось' : 'Пока пусто'}</h2><p class="muted small">${q ? 'Попробуйте другое слово.' : 'Нажмите «+», чтобы создать карточку, или загрузите их из таблицы в настройках.'}</p></div>`}
     </section>
@@ -624,7 +724,8 @@ function openSheet(id, opts = {}) {
   sheet = { id: c ? c.id : null, qPh: c ? [...c.qPh] : [], aPh: c ? [...c.aPh] : [], created: [], removed: [], busy: 0,
     mode: c ? c.mode : dc.mode,
     plan: c && c.plan ? { ...c.plan } : { kind: 'classic', exam: t + 30, after: 'continue', steps: [1, 2, 5, 10] },
-    start: c ? c.due : (opts.start ?? t), modeTouched: false };
+    start: c ? c.due : (opts.start ?? t), modeTouched: false,
+    capMode: c && c.capsule && !c.capsule.opened && c.capsule.mode ? c.capsule.mode : 'y1', capDate: c && c.capsule && !c.capsule.opened ? c.capsule.open : t + 365 };
   $('layer').innerHTML = `<div class="sheet-bg" id="sbg"></div>
     <form class="sheet" id="sheet"><div class="grab"></div><div class="in">
       <h2>${c ? (c.archived ? 'Карточка в архиве' : 'Карточка') : 'Новая карточка'}</h2>
@@ -632,6 +733,16 @@ function openSheet(id, opts = {}) {
       <div class="ph-row" id="ph-q"></div>
       <label>Ответ<textarea id="fA" rows="2" style="min-height:70px" placeholder="${esc(ex[1])}">${c ? esc(c.a) : ''}</textarea></label>
       <div class="ph-row" id="ph-a"></div>
+      ${c && !c.fresh && !c.archived ? (() => { const r0 = M.R(c, today()), r7 = M.R(c, today() + 7); return `<div class="charge"><span class="bat ${r0 >= 0.85 ? 'hi' : r0 >= 0.6 ? 'mid' : 'lo'}"><i style="width:${Math.round(r0 * 100)}%"></i></span><span>Заряд памяти <b>${pct(r0)}</b>${c.due > today() ? ` · без повторения через неделю будет ${pct(r7)}` : ' · пора повторить'}</span></div>`; })() : ''}
+      <details class="xf" ${c && c.hook ? 'open' : ''}><summary>Зацепка <small>покажется, если забудете</small></summary>
+        <textarea id="fHook" rows="2" style="min-height:60px" placeholder="Ассоциация, рифма, картинка в голове…">${c && c.hook ? esc(c.hook) : ''}</textarea>
+        <div class="hk"><button type="button" id="hkAcr">Первые буквы</button><button type="button" id="hkNum">Разбить число</button><button type="button" id="hkIdea">Идея</button></div>
+        <p class="muted small" id="hkTxt"></p></details>
+      <details class="xf" ${c && c.capsule && c.capsule.text ? 'open' : ''}><summary>Капсула времени <small>записка себе в будущее</small></summary>
+        ${c && c.capsule && c.capsule.opened ? `<p class="muted small">Капсула открыта ${fmtY(c.capsule.opened)}. Можно написать новую.</p>` : ''}
+        <textarea id="fCap" rows="3" style="min-height:76px" placeholder="Что сейчас происходит, зачем учите, что хотите сказать себе через год…">${c && c.capsule && !c.capsule.opened ? esc(c.capsule.text) : ''}</textarea>
+        <div class="field"><span class="flabel">Открыть при первом повторении после</span>${seg('cap', [['y1', 'Через год'], ['y3', 'Через 3 года'], ['date', 'Дата']], sheet.capMode)}</div>
+        <input type="date" id="fCapDate" value="${toISO(sheet.capDate)}" ${sheet.capMode === 'date' ? '' : 'hidden'}></details>
       <label>Колода<input id="fD" list="deckList" required value="${esc(deck0)}"></label>
       <datalist id="deckList">${decks().map(d => `<option value="${esc(d)}">`).join('')}</datalist>
       <div class="field"><span class="flabel">Расписание</span>${seg('mode', [['smart', 'Умное'], ['plan', 'По плану']], sheet.mode)}<p class="muted small" id="modeHint"></p></div>
@@ -648,12 +759,19 @@ function openSheet(id, opts = {}) {
   const cancel = $('cancel'); if (cancel) cancel.onclick = () => closeSheet();
   $('fD').oninput = () => { if (!c && !sheet.modeTouched) { sheet.mode = cfg($('fD').value.trim()).mode; syncSeg(); renderPlanBox(); } updateHints(); };
   $('fStart').onchange = () => { const v = fromISO($('fStart').value); if (v != null) sheet.start = v; updateHints(); };
+  const hkT = $('hkTxt'), hook = $('fHook');
+  const addHook = txt => { hook.value = (hook.value.trim() ? hook.value.trim() + '\n' : '') + txt; };
+  $('hkAcr').onclick = () => { const a = M.acronym($('fA').value) || M.acronym($('fQ').value); if (a) { addHook(a + ' — '); hkT.textContent = 'Допишите, что значит каждая буква или придумайте слово из них.'; } else hkT.textContent = 'Для первых букв нужен ответ хотя бы из двух слов.'; hook.focus(); };
+  $('hkNum').onclick = () => { const n = M.numberHint($('fA').value) || M.numberHint($('fQ').value); if (n) { addHook(n + ' — '); hkT.textContent = 'Свяжите каждую часть с чем-то знакомым: годом, номером дома, возрастом.'; } else hkT.textContent = 'В ответе нет числа из трёх и более цифр.'; hook.focus(); };
+  $('hkIdea').onclick = () => { hkT.textContent = pick(C.hookIdeas, 'hk'); hook.focus(); };
+  $('fCapDate').onchange = e => { const v = fromISO(e.target.value); if (v != null) sheet.capDate = v; };
   $('sheet').addEventListener('click', e => {
     const b = e.target.closest('[data-seg]'); if (!b) return;
     const k = b.dataset.seg, v = b.dataset.v;
     if (k === 'mode') { sheet.mode = v; sheet.modeTouched = true; }
     if (k === 'kind') sheet.plan.kind = v;
     if (k === 'after') sheet.plan.after = v;
+    if (k === 'cap') { sheet.capMode = v; $('fCapDate').hidden = v !== 'date'; }
     syncSeg(); renderPlanBox(); updateHints(); buzz('LIGHT');
   });
   let sure = false;
@@ -671,7 +789,7 @@ function openSheet(id, opts = {}) {
 }
 function syncSeg() {
   document.querySelectorAll('[data-seg]').forEach(b => {
-    const k = b.dataset.seg, cur = k === 'mode' ? sheet.mode : k === 'kind' ? sheet.plan.kind : sheet.plan.after;
+    const k = b.dataset.seg, cur = k === 'mode' ? sheet.mode : k === 'kind' ? sheet.plan.kind : k === 'cap' ? sheet.capMode : sheet.plan.after;
     b.setAttribute('aria-pressed', String(b.dataset.v === cur));
   });
 }
@@ -738,9 +856,15 @@ function submitSheet(c) {
   if (sheet.mode === 'plan' && sheet.plan.kind === 'exam' && !(sheet.plan.exam > (c ? today() : sheet.start))) { err.hidden = false; err.textContent = 'Дата экзамена должна быть позже даты начала.'; return; }
   sheet.removed.forEach(photoDel);
   const qText = q || '(вопрос на фото)', aText = a || '(ответ на фото)';
+  const hookText = $('fHook').value.trim(), capText = $('fCap').value.trim();
+  const base = c ? (c.created ?? today()) : Math.min(sheet.start, today());
+  const capsule = capText ? { text: capText, mode: sheet.capMode, open: sheet.capMode === 'date' ? Math.max(today() + 1, sheet.capDate) : base + (sheet.capMode === 'y3' ? 365 * 3 + 1 : 365) } : null;
   const plan = sheet.mode === 'plan' ? { kind: sheet.plan.kind, ...(sheet.plan.kind === 'exam' ? { exam: sheet.plan.exam, after: sheet.plan.after || 'continue' } : {}), ...(sheet.plan.kind === 'custom' ? { steps: sheet.plan.steps } : {}) } : undefined;
   if (c) {
     Object.assign(c, { q: qText, a: aText, deck, qPh: sheet.qPh, aPh: sheet.aPh });
+    if (hookText) c.hook = hookText; else delete c.hook;
+    if (capsule) c.capsule = Object.assign({ snap: c.capsule && !c.capsule.opened ? c.capsule.snap : snapNow() }, capsule);
+    else if (c.capsule && !c.capsule.opened) delete c.capsule;
     if (c.mode !== sheet.mode) {
       if (sheet.mode === 'plan') { c.step = c.fresh ? 0 : 1; }
       else { c.reps = c.fresh ? 0 : 1; c.interval = c.interval || (c.fresh ? 0 : 1); c.ease = c.ease || 2.5; }
@@ -750,7 +874,7 @@ function submitSheet(c) {
     if (plan && plan.kind === 'exam') c.plan.dates = S.examDates(c.start != null && c.start < plan.exam ? c.start : today(), plan.exam);
     if (sheet.start !== c.due) { c.due = c.nom = sheet.start; c.pin = true; }
   } else {
-    state.cards.push(newCard(qText, aText, deck, { mode: sheet.mode, plan, qPh: sheet.qPh, aPh: sheet.aPh, start: sheet.start }));
+    state.cards.push(newCard(qText, aText, deck, { mode: sheet.mode, plan, qPh: sheet.qPh, aPh: sheet.aPh, start: sheet.start, hook: hookText || undefined, capsule: capsule ? { ...capsule, snap: snapNow() } : undefined }));
   }
   rebalanceAll(); changed(); buzz('LIGHT');
   const keepStart = sheet.start;
@@ -885,6 +1009,80 @@ function renderImport(box) {
   };
 }
 
+// ---------- Демо-история (для проверки) ----------
+function demoHistory() {
+  const cards = state.cards.filter(c => !c.archived); if (!cards.length) return 0;
+  const t = today(); let n = 0; state.demoLog = state.demoLog || {};
+  const rnd = (() => { let x = 12345; return () => (x = (x * 16807) % 2147483647) / 2147483647; })();
+  for (const c of cards) {
+    let d = t - 90 + Math.floor(rnd() * 20), iv = 1, ease = 2.5;
+    const deckBias = (state.colors[c.deck] ?? 0) % 3 * 0.04;
+    while (d < t) {
+      const evening = rnd() < 0.55, m = evening ? 19 * 60 + Math.floor(rnd() * 180) : 8 * 60 + Math.floor(rnd() * 180);
+      const pRecall = Math.pow(1 + iv / (9 * Math.max(1, iv * 0.9)), -1) - deckBias + (evening ? 0.04 : -0.04);
+      const ok = rnd() < pRecall, g = ok ? (rnd() < 0.75 ? 4 : 3) : 1;
+      state.hist.push({ d, m, id: c.id, g, k: c.deck, q: c.q.slice(0, 120), demo: true }); n++;
+      state.log[d] = (state.log[d] || 0) + 1; state.demoLog[d] = (state.demoLog[d] || 0) + 1;
+      if (g === 1) iv = 1; else { iv = Math.max(1, Math.round(iv * ease * (g === 3 ? 0.6 : 1))); }
+      d += iv;
+    }
+  }
+  state.hist.sort((a, b) => a.d - b.d);
+  return n;
+}
+
+// ---------- Моя память (статистика) ----------
+let statsDeck = '';
+function curveSvg(deck) {
+  const pts = M.personalCurve(state.hist, deck), W = 340, H = 210, L = 34, B = 30, T = 12, Rr = 10;
+  const xs = [0.014, 1, 2, 5, 10, 21, 60, 180];
+  const lx = v => L + (Math.log10(v) - Math.log10(0.014)) / (Math.log10(180) - Math.log10(0.014)) * (W - L - Rr);
+  const ly = p => T + (1 - p / 100) * (H - T - B);
+  let g = '';
+  for (const p of [0, 25, 50, 75, 100]) g += `<line x1="${L}" x2="${W - Rr}" y1="${ly(p)}" y2="${ly(p)}" stroke="var(--line)"/><text x="${L - 6}" y="${ly(p) + 4}" text-anchor="end">${p}%</text>`;
+  for (const [v, lab] of [[0.042, '1 ч'], [1, '1 д'], [7, '1 нед'], [30, '1 мес'], [180, '6 мес']]) g += `<text x="${lx(v)}" y="${H - 10}" text-anchor="middle">${lab}</text>`;
+  const ebb = M.EBB.map(([d, p]) => `${lx(d)},${ly(p)}`).join(' ');
+  g += `<polyline points="${ebb}" fill="none" stroke="var(--muted)" stroke-width="2" stroke-dasharray="5 5"/>`;
+  g += M.EBB.map(([d, p]) => `<circle cx="${lx(d)}" cy="${ly(p)}" r="2.5" fill="var(--muted)"/>`).join('');
+  const mine = pts.filter(p => p.p != null && p.n >= 3);
+  if (mine.length) {
+    g += `<polyline points="${mine.map(p => `${lx(Math.max(1, p.mid))},${ly(p.p * 100)}`).join(' ')}" fill="none" stroke="var(--accent)" stroke-width="3" stroke-linejoin="round"/>`;
+    g += mine.map(p => `<circle cx="${lx(Math.max(1, p.mid))}" cy="${ly(p.p * 100)}" r="${3 + Math.min(4, Math.sqrt(p.n) / 2)}" fill="var(--accent)" stroke="var(--surface)" stroke-width="2"><title>${p.label}: ${Math.round(p.p * 100)}% из ${p.n}</title></circle>`).join('');
+  }
+  return { svg: `<svg viewBox="0 0 ${W} ${H}" class="chart" role="img" aria-label="Кривая забывания">${g}</svg>`, mine, pts };
+}
+function renderStats() {
+  const dks = activeDecks(); if (statsDeck && !dks.includes(statsDeck)) statsDeck = '';
+  const cv = curveSvg(statsDeck), bt = M.bestTime(state.hist, state.settings.time);
+  const week = cv.mine.find(p => p.label === '4–7'), month = cv.mine.find(p => p.label === '2–4 нед');
+  const totalPairs = cv.pts.reduce((s, p) => s + p.n, 0);
+  $('app').innerHTML = `
+    <header class="top"><div><button class="link" id="stBack">← Сегодня</button><h1>Моя память</h1></div></header>
+    ${dks.length > 1 ? `<div class="filters"><button class="chip" data-sf="" aria-pressed="${!statsDeck}">Все колоды</button>${dks.map(d => `<button class="chip" data-sf="${esc(d)}" aria-pressed="${statsDeck === d}"><i style="background:${deckColor(d)}"></i>${esc(d)}</button>`).join('')}</div>` : ''}
+    <section class="panel">
+      <h2>Кривая забывания</h2>
+      ${cv.svg}
+      <div class="legend"><span><i class="dot" style="background:var(--accent)"></i>вы: доля вспомненного после паузы</span><span><i class="dot" style="background:var(--muted)"></i>Эббингауз, 1885, без повторений</span></div>
+      <p class="muted small">${cv.mine.length >= 2 ? `${week ? `После недели без повторения вы вспоминаете ${Math.round(week.p * 100)}%` : ''}${week && month ? ', ' : ''}${month ? `после 2–4 недель — ${Math.round(month.p * 100)}%` : ''}. Эббингауз проверял память без повторений, поэтому его кривая падает быстрее: разница между линиями и есть эффект интервального повторения.`
+        : `Кривая появится, когда наберётся история: нужно хотя бы несколько повторений одних и тех же карточек через разные промежутки. Сейчас пар «пауза → ответ»: ${totalPairs}.`}</p>
+    </section>
+    <section class="panel">
+      <h2>Заряд по колодам</h2>
+      ${dks.map(d => { const r = M.memoryNow(state.cards, today(), d); return `<div class="dbar"><span><i class="dot" style="background:${deckColor(d)}"></i>${esc(d)}</span><span class="bat wide ${r == null ? '' : r >= 0.85 ? 'hi' : r >= 0.6 ? 'mid' : 'lo'}"><i style="width:${Math.round((r || 0) * 100)}%"></i></span><b>${pct(r)}</b></div>`; }).join('') || '<p class="muted small">Колод пока нет.</p>'}
+    </section>
+    ${dks.map(d => readinessBlock(d, false)).join('')}
+    <section class="panel">
+      <h2>Лучшее время дня</h2>
+      <div class="tod">${bt.rows.map(r => `<div><span class="tb"><i style="height:${r.p == null ? 0 : Math.round(r.p * 100)}%"></i></span><b>${r.p == null ? '—' : Math.round(r.p * 100) + '%'}</b><span>${r.name}</span><small>${r.n}</small></div>`).join('')}</div>
+      <p class="muted small">${bt.total < 30 ? `Нужно хотя бы 30 ответов в умном режиме, сейчас ${bt.total}. Под столбцами — число ответов.` : bt.suggestion ? `Лучше всего вы вспоминаете ${({ 'Утро': 'утром', 'День': 'днём', 'Вечер': 'вечером', 'Ночь': 'ночью' })[bt.suggestion.part]}. Сейчас напоминание стоит на ${state.settings.time}.` : `Время напоминания (${state.settings.time}) уже совпадает с вашим лучшим временем или разница небольшая.`}</p>
+      ${bt.suggestion ? `<button class="primary" id="stBt">Перенести напоминание на ${bt.suggestion.time}</button>` : ''}
+      <p class="muted small">Совет: короткое повторение перед сном помогает памяти закрепить новое.</p>
+    </section>`;
+  $('stBack').onclick = () => go('home');
+  document.querySelectorAll('[data-sf]').forEach(b => b.onclick = () => { statsDeck = b.dataset.sf; renderStats(); });
+  const sb = $('stBt'); if (sb) sb.onclick = async () => { state.settings.time = bt.suggestion.time; save(); await scheduleReminders(); renderStats(); toast('Напоминание теперь в ' + bt.suggestion.time); };
+}
+
 // ---------- Настройки ----------
 const csvCell = s => /[;"\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
 async function copy(area) { try { await navigator.clipboard.writeText(area.value); toast('Скопировано'); } catch (e) { area.focus(); area.select(); toast('Текст выделен, скопируйте его'); } }
@@ -895,7 +1093,7 @@ function renderMore() {
   const inner = html => `<div class="panel" style="border:0;border-radius:0">${html}</div>`;
   const dk = decks();
   $('app').innerHTML = `
-    <header><p class="eyebrow">Карточки ${window.BUILD ? window.BUILD.version + ' · сборка ' + window.BUILD.commit : '1.3'}</p><h1>Настройки</h1></header>
+    <header><p class="eyebrow">Карточки ${window.BUILD ? window.BUILD.version + ' · сборка ' + window.BUILD.commit : '1.4'}</p><h1>Настройки</h1></header>
     <section class="group">
       <div class="deckrow"><div class="nm">${ICON.palette.replace('<svg', '<svg style="width:20px;height:20px;stroke:var(--accent);stroke-width:2;fill:none"')}<span>Тема</span></div>
         <div class="themes">${Object.entries(TH.P).map(([k, p]) => `<button class="theme" data-pal="${k}" aria-pressed="${th.pal === k}"><i style="background:${p[TH.isDark() ? 'dark' : 'light'][6]}"></i><span>${p.name}</span></button>`).join('')}</div>
@@ -915,6 +1113,7 @@ function renderMore() {
               <div class="segc" role="group">${Object.entries(DECK_TYPES).map(([k, v]) => `<button type="button" data-dt="${k}" data-deck="${esc(d)}" aria-pressed="${cf.type === k}">${v.name}${v.limit ? ` · ${v.limit}` : ''}</button>`).join('')}</div>
               ${cf.type === 'custom' ? `<label class="mrow"><span>Карточек в день</span><input type="number" min="1" max="500" data-dl="${esc(d)}" value="${cf.limit}"></label>` : ''}</div>
             <div class="field"><span class="flabel">Расписание для новых карточек</span><div class="segc" role="group">${[['smart', 'Умное'], ['plan', 'По плану']].map(([v, l]) => `<button type="button" data-dm="${v}" data-deck="${esc(d)}" aria-pressed="${cf.mode === v}">${l}</button>`).join('')}</div></div>
+            <div class="field"><span class="flabel">Дата экзамена <small class="muted">для прогноза готовности</small></span><div class="row2"><input type="date" data-dex="${esc(d)}" value="${cf.exam ? toISO(cf.exam) : ''}">${cf.exam ? `<button type="button" data-dexc="${esc(d)}">Убрать</button>` : ''}</div></div>
             <div class="field"><span class="flabel">Цвет</span><div class="swatches">${Array.from({ length: PALETTE }, (_, i) => `<button class="sw" style="background:var(--c${i})" data-deckc="${esc(d)}" data-ci="${i}" aria-label="Цвет ${i + 1}" aria-pressed="${state.colors[d] === i}"></button>`).join('')}</div></div>` : ''}
           </div>`; }).join('') : inner('<p class="muted small">Создайте карточку, и её колода появится здесь.</p>')) : ''}
     </section>
@@ -930,7 +1129,9 @@ function renderMore() {
       ${opt('lab', ICON.flask, 'Для проверки прототипа', 'Перемотка даты и параметры расписания')}
       ${morePanel === 'lab' ? inner(`
         <p class="muted small">Дата в приложении: <b>${fmt(today())}</b>${state.offset ? ` (+${daysWord(state.offset)})` : ''}</p>
-        <div class="row2"><button id="d1">+1 день</button><button id="d7">+7 дней</button><button id="d0" ${state.offset ? '' : 'disabled'}>Сегодня</button></div>
+        <div class="row2"><button id="d1">+1 день</button><button id="d7">+7 дней</button><button id="d365">+1 год</button><button id="d0" ${state.offset ? '' : 'disabled'}>Сегодня</button></div>
+        <div class="row2"><button id="demoH">Демо-история за 90 дней</button>${state.hist.some(h => h.demo) ? '<button id="demoX">Убрать демо</button>' : ''}</div>
+        <p class="muted small">Демо-история нужна, чтобы посмотреть кривую забывания и лучшее время без реальных занятий.</p>
         ${state.cards.length ? `<div class="scroll"><table><thead><tr><th>Вопрос</th><th>Режим</th><th>Срок</th><th>Интервал</th><th>Шаг / подряд</th></tr></thead><tbody>
           ${state.cards.map(c => `<tr><td>${esc(c.q)}</td><td>${c.mode === 'plan' ? 'план' : 'умное'}${c.archived ? ', архив' : ''}</td><td class="num">${fmtS(c.due)}</td><td class="num">${c.interval} дн.</td><td class="num">${c.mode === 'plan' ? c.step : c.reps}</td></tr>`).join('')}</tbody></table></div>` : ''}
         <button id="onbAgain">Показать знакомство заново</button>
@@ -949,6 +1150,8 @@ function renderMore() {
   document.querySelectorAll('[data-dt]').forEach(b => b.onclick = () => { const t = b.dataset.dt; setCfg(b.dataset.deck, { type: t, ...(DECK_TYPES[t].limit ? { limit: DECK_TYPES[t].limit } : {}) }); });
   document.querySelectorAll('[data-dl]').forEach(i => i.onchange = () => setCfg(i.dataset.dl, { limit: Math.max(1, Math.min(500, +i.value || 1)) }));
   document.querySelectorAll('[data-dm]').forEach(b => b.onclick = () => setCfg(b.dataset.deck, { mode: b.dataset.dm }));
+  document.querySelectorAll('[data-dex]').forEach(i => i.onchange = () => { const v = fromISO(i.value); if (v != null && v > today()) { setCfg(i.dataset.dex, { exam: v }); toast('Прогноз готовности появится на главном экране'); } else toast('Выберите дату в будущем'); });
+  document.querySelectorAll('[data-dexc]').forEach(b => b.onclick = () => setCfg(b.dataset.dexc, { exam: null }));
   document.querySelectorAll('[data-deckc]').forEach(b => b.onclick = () => { state.colors[b.dataset.deckc] = +b.dataset.ci; save(); buzz('LIGHT'); renderMore(); });
   if (morePanel === 'imp') {
     const box = $('impBox');
@@ -966,7 +1169,9 @@ function renderMore() {
   if (morePanel === 'exp') $('copyExp').onclick = () => copy($('exportText'));
   if (morePanel === 'lab') {
     const shift = n => () => { state.offset = n === 0 ? 0 : state.offset + n; calSel = null; calMonth = null; save(); scheduleReminders(); render(); toast('Дата: ' + fmt(today())); };
-    $('d1').onclick = shift(1); $('d7').onclick = shift(7); $('d0').onclick = shift(0);
+    $('d1').onclick = shift(1); $('d7').onclick = shift(7); $('d0').onclick = shift(0); $('d365').onclick = shift(365);
+    $('demoH').onclick = () => { const n = demoHistory(); changed(); renderMore(); toast(n ? `Добавлено ${n} демо-повторений` : 'Сначала добавьте карточки'); };
+    const dx = $('demoX'); if (dx) dx.onclick = () => { state.hist = state.hist.filter(h => !h.demo); for (const k of Object.keys(state.demoLog || {})) { state.log[k] = Math.max(0, (state.log[k] || 0) - state.demoLog[k]); if (!state.log[k]) delete state.log[k]; } state.demoLog = {}; changed(); renderMore(); toast('Демо-история удалена'); };
     $('onbAgain').onclick = () => { onbStep = 0; morePanel = ''; go('onboarding'); };
     let sure = false;
     $('wipe').onclick = async e => {
@@ -995,7 +1200,8 @@ async function init() {
   if (state.onboarded) { await ensurePermission(false); await scheduleReminders(); render(); }
   if (LN) LN.addListener('localNotificationActionPerformed', () => { if (!state.onboarded) return; if (todayQ().length) startSession(''); else go('home'); });
   if (App) App.addListener('backButton', () => {
-    if (viewer) closeViewer();
+    if (skyFull) closeSky();
+    else if (viewer) closeViewer();
     else if (menuOpen) { menuOpen = false; $('layer2').innerHTML = ''; }
     else if (sheet) closeSheet();
     else if (screen === 'review') { session = null; go('home'); }
